@@ -11,7 +11,9 @@
 int TriggerScan(uint32_t crateMask, uint32_t *slotMasks, int triggerSelect, int dacSelect, int maxNhit, int minThresh, const char* fileName, int quickMode)
 {
   lprintf("*** Starting Trigger Scan  *************\n");
-
+  lprintf("Selected trigger is %i\n", triggerSelect);
+  lprintf("Selected dac is %i\n", dacSelect);
+  lprintf("Max nhit = %i\n", maxNhit);
   uint32_t select_reg,result,beforegt,aftergt;
   int num_fecs = 0;
   int min_nhit = 0;
@@ -33,10 +35,11 @@ int TriggerScan(uint32_t crateMask, uint32_t *slotMasks, int triggerSelect, int 
     lprintf("Starting a trigger scan.\n");
     int errors = mtc->SetupPedestals(0, DEFAULT_PED_WIDTH, DEFAULT_GT_DELAY,0,
         crateMask,crateMask);
+      mtc->SetGTCrateMask((MSK_TUB | MSK_TUB_B ));
     if (errors){
       lprintf("Error setting up MTC for pedestals. Exiting\n");
-      mtc->UnsetPedCrateMask(MASKALL);
-      mtc->UnsetGTCrateMask(MASKALL);
+      mtc->UnsetPedCrateMask(MASKALL - (MSK_TUB | MSK_TUB_B ));
+      mtc->UnsetGTCrateMask(MASKALL - (MSK_TUB |  MSK_TUB_B ));
       fclose(file);
       return -1;
     }
@@ -63,20 +66,29 @@ int TriggerScan(uint32_t crateMask, uint32_t *slotMasks, int triggerSelect, int 
     for (int ithresh=0;ithresh<4095-minThresh;ithresh++){
       // if quick mode, do the first 50 then only every 10
       if (ithresh > 50 && quickMode == 1){ithresh += 9;}
-      if (dacSelect >= 0)
+      if (dacSelect >= 0) { 
         counts[dacSelect] = 4095-ithresh;
-      else
-        counts[triggerSelect-1] = 4095-ithresh;
+      } else {
+        // EDM Aug 28 2018, removed the -1 b/c it seems to be wrong!
+        //int temp_index = triggerSelect-1;
+        int temp_index = triggerSelect;
+        lprintf("temp_index = %i\n",temp_index);
+        counts[temp_index] = 4095-ithresh;
+      }
 
       // now disable triggers while programming dacs
       // so we dont trigger off noise
       mtc->UnsetGTMask(0xFFFFFFFF);
       mtc->LoadMTCADacsByCounts(counts);
       usleep(500);
-      mtc->SetGTMask(0x1<<(triggerSelect-1));
+     
+      // EDM Aug 28 2018, removed the -1 b/c it seems to be wrong!
+      //mtc->SetGTMask(0x1<<(triggerSelect-1));
+      mtc->SetGTMask(0x1<<(triggerSelect));
 
-      for (int i=0;i<10000;i++)
+      for (int i=0;i<10000;i++) {
         values[i] = -1;
+      }
       last_zero = 0;
       noise_count = 0;
       one_count = 0;
@@ -158,15 +170,17 @@ int TriggerScan(uint32_t crateMask, uint32_t *slotMasks, int triggerSelect, int 
 
         // we will stop at an nhit based on where
         // we hit the triangle of bliss
-        if (values[inhit] > 0.9 && values[inhit] < 1.1)
+        if (values[inhit] > 0.9 && values[inhit] < 1.1) {
           one_count++;
+        }
 
         // we will also stop if we are stuck in the
         // noise for too long meaning we arent at a
         // high enough threshold to see the triangle
         // of bliss
-        if (values[inhit] > 1.2)
+        if (values[inhit] > 1.2) {
           noise_count++;
+        }
 
         if (one_count > 5 || noise_count > 25){
           // we are done with this threshold
